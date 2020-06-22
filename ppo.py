@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from network import Policy
 import gym
 from torch.distributions import Categorical
 import numpy as np
@@ -58,9 +57,10 @@ class PPO():
 
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.shape[0]
-        self.lr = 1e-2
+        self.lr = 3e-4
         self.gamma  = 0.99
         self.epsilon = 0.2
+        self.K_epochs = 80
 
         self.policy = ActorCritic(self.state_size, self.action_size)
         self.policy_old = ActorCritic(self.state_size, self.action_size)
@@ -78,24 +78,36 @@ class PPO():
             discounted_rewards.insert(0, discounted_reward)
         
         discounted_rewards = torch.tensor(discounted_rewards)
-        state_values = torch.tensor(state_values)
+        state_values = torch.stack(state_values, 1).squeeze()
         advantages = discounted_rewards - state_values
-        new_log_probs = []
-        for state in states:
-            _, log_prob, _ = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
-            new_log_probs.append(log_prob)
         
-        old_log_probs = torch.tensor(log_probs)
-        new_log_probs = torch.tensor(new_log_probs)
+        # old_log_probs = torch.stack(log_probs, 1).squeeze()
+        old_log_probs = torch.tensor(log_probs).squeeze()
+        
 
-        ratios = new_log_probs/old_log_probs
-        ratios_clipped = torch.clamp(ratios, min=1-self.epsilon, max=1+self.epsilon)
-        loss = -torch.min(new_log_probs/old_log_probs, 1-self.epsilon, 1+self.epsilon)*advantages
+        for _ in range(self.K_epochs):
+            new_log_probs = []
 
-        self.optimizer.zero_grad()
+            for state in states:
+                _, log_prob, _ = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+                new_log_probs.append(log_prob)
+            
+            _, log_prob, _ = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
 
-        loss.backward()
-        self.optimizer.step()
+            new_log_probs = torch.stack(new_log_probs, 1).squeeze()
+
+            # print(state_values)
+            # print(discounted_rewards)
+            # print(new_log_probs)
+            # print(old_log_probs)
+            ratios = new_log_probs/old_log_probs
+            ratios_clipped = torch.clamp(ratios, min=1-self.epsilon, max=1+self.epsilon)
+            loss = -ratios_clipped*advantages
+
+            self.optimizer.zero_grad()
+
+            loss.mean().backward()
+            self.optimizer.step()
 
 
             
@@ -110,9 +122,9 @@ action_size = env.action_space.shape[0]
 # action = agent.act(torch.from_numpy(state).float().unsqueeze(0))
 # print(action)
 
-n_episodes = 10
-max_steps = 400
-update_interval = 5
+n_episodes = 200
+max_steps = 1000
+update_interval = 100
 time_step = 0
 
 scores = deque(maxlen=100)
@@ -137,6 +149,7 @@ for n_episode in range(1, n_episodes+1):
         
         actions.append(action)
         state_values.append(state_value)
+        print(log_prob)
         log_probs.append(log_prob)
 
         states.append(state)
@@ -147,6 +160,16 @@ for n_episode in range(1, n_episodes+1):
         scores.append(total_reward)
 
         if time_step % update_interval == 0:
+            print("Time step: ",time_step)
+            print(len(states))
+            print(len(state_values))
+            print(len(log_probs))
+            print(len(actions))
+            print(len(rewards))
+            print(len(dones))
+
+            print(state)
+            print(log_prob)
             agent.update(states, actions, rewards, dones, state_values, log_probs)
             time_step = 0
             states.clear()
@@ -155,12 +178,23 @@ for n_episode in range(1, n_episodes+1):
             actions.clear()
             rewards.clear()
             dones.clear()
+    
 
         if done:
             break
 
+    print("Episode passed")
+    print(len(states))
+    print(len(state_values))
+    print(len(log_probs))
+    print(len(actions))
+    print(len(rewards))
+    print(len(dones))
+    print("Time step: ",time_step)
+
+
     
-    if n_episode % 100 == 0:
+    if n_episode % 10 == 0:
         print("Episode: ", n_episode, "Avg. score: ", np.mean(scores))
 
     # def act(self, state):
