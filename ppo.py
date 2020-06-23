@@ -25,7 +25,6 @@ class ActorCritic(nn.Module):
         self.distribution = torch.distributions.Normal
 
     def forward(self, state):
-        # print(state)
         x = torch.tanh(self.actor_fc1(state))
         x = torch.tanh(self.actor_fc2(x))
         mu = torch.tanh(self.actor_mu(x))
@@ -41,15 +40,16 @@ class ActorCritic(nn.Module):
         action_mu, action_sigma, _ = self.forward(state)
         m = self.distribution(action_mu, action_sigma)
         action = m.sample()
-        return action
-    
-    def evaluate(self, state):
-        action_mu, action_sigma, state_value = self.forward(state)
-        m = self.distribution(action_mu, action_sigma)
-        action = m.sample()
         log_prob = m.log_prob(action)
 
-        return action, log_prob, state_value
+        return action, log_prob
+    
+    def evaluate(self, state, action):
+        action_mu, action_sigma, state_value = self.forward(state)
+        m = self.distribution(action_mu.squeeze(), action_sigma.squeeze())
+        log_prob = m.log_prob(action)
+
+        return log_prob, state_value
 
 
 class PPO():
@@ -60,14 +60,14 @@ class PPO():
         self.lr = 3e-4
         self.gamma  = 0.99
         self.epsilon = 0.2
-        self.K_epochs = 80
+        self.K_epochs = 20
 
         self.policy = ActorCritic(self.state_size, self.action_size)
         self.policy_old = ActorCritic(self.state_size, self.action_size)
 
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr)
 
-    def update(self, states, actions, rewards, dones, state_values, log_probs):
+    def update(self, states, actions, rewards, dones, log_probs):
 
         discounted_rewards = []
         discounted_reward = 0
@@ -78,31 +78,28 @@ class PPO():
             discounted_rewards.insert(0, discounted_reward)
         
         discounted_rewards = torch.tensor(discounted_rewards)
-        state_values = torch.stack(state_values, 1).squeeze()
-        advantages = discounted_rewards - state_values
         
-        # old_log_probs = torch.stack(log_probs, 1).squeeze()
         old_log_probs = torch.tensor(log_probs).squeeze()
-        
 
-        for _ in range(self.K_epochs):
-            new_log_probs = []
+        states = torch.tensor(states).squeeze().float()
+        actions = torch.tensor(actions)
 
-            for state in states:
-                _, log_prob, _ = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
-                new_log_probs.append(log_prob)
-            
-            _, log_prob, _ = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+        for epoch in range(self.K_epochs):
 
-            new_log_probs = torch.stack(new_log_probs, 1).squeeze()
+            # for state in states:
+            #     _, log_prob, state_value = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+            #     new_log_probs.append(log_prob)
+            #     state_values = torch.stack(state_values, 1).squeeze()
 
-            # print(state_values)
-            # print(discounted_rewards)
-            # print(new_log_probs)
-            # print(old_log_probs)
+            new_log_probs, state_values = self.policy.evaluate(states, actions)
+
+            new_log_probs = new_log_probs.squeeze()
+            advantages = discounted_rewards - state_values.squeeze()
+
             ratios = new_log_probs/old_log_probs
             ratios_clipped = torch.clamp(ratios, min=1-self.epsilon, max=1+self.epsilon)
-            loss = -ratios_clipped*advantages
+
+            loss = -torch.min(ratios*advantages, ratios_clipped*advantages)
 
             self.optimizer.zero_grad()
 
@@ -139,19 +136,14 @@ dones =  []
 agent = PPO(env)
 
 for n_episode in range(1, n_episodes+1):
-    log_probs = []
     state = env.reset()
 
     for t in range(max_steps):
         time_step += 1
-        action, log_prob, state_value = agent.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
-        state, reward, done, _ = env.step(action.numpy())
-        
+        action, log_prob = agent.policy.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+        state, reward, done, _ = env.step(action.squeeze(0).numpy())
         actions.append(action)
-        state_values.append(state_value)
-        print(log_prob)
         log_probs.append(log_prob)
-
         states.append(state)
         rewards.append(reward)
         dones.append(done)
@@ -160,17 +152,7 @@ for n_episode in range(1, n_episodes+1):
         scores.append(total_reward)
 
         if time_step % update_interval == 0:
-            print("Time step: ",time_step)
-            print(len(states))
-            print(len(state_values))
-            print(len(log_probs))
-            print(len(actions))
-            print(len(rewards))
-            print(len(dones))
-
-            print(state)
-            print(log_prob)
-            agent.update(states, actions, rewards, dones, state_values, log_probs)
+            agent.update(states, actions, rewards, dones, log_probs)
             time_step = 0
             states.clear()
             state_values.clear()
@@ -183,19 +165,7 @@ for n_episode in range(1, n_episodes+1):
         if done:
             break
 
-    print("Episode passed")
-    print(len(states))
-    print(len(state_values))
-    print(len(log_probs))
-    print(len(actions))
-    print(len(rewards))
-    print(len(dones))
-    print("Time step: ",time_step)
-
 
     
     if n_episode % 10 == 0:
         print("Episode: ", n_episode, "Avg. score: ", np.mean(scores))
-
-    # def act(self, state):
-        #To be implemented
