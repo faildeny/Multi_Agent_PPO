@@ -57,10 +57,10 @@ class PPO():
 
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.shape[0]
-        self.lr = 3e-4
+        self.lr = 0.0003
         self.gamma  = 0.99
         self.epsilon = 0.2
-        self.K_epochs = 20
+        self.K_epochs = 80
 
         self.policy = ActorCritic(self.state_size, self.action_size)
         self.policy_old = ActorCritic(self.state_size, self.action_size)
@@ -119,12 +119,14 @@ action_size = env.action_space.shape[0]
 # action = agent.act(torch.from_numpy(state).float().unsqueeze(0))
 # print(action)
 
-n_episodes = 200
-max_steps = 1000
-update_interval = 100
+n_episodes = 1000
+max_steps = 1500
+update_interval = 4000
+log_interval = 20
 time_step = 0
 
-scores = deque(maxlen=100)
+scores = deque(maxlen=log_interval)
+episode_lengths = deque(maxlen=log_interval)
 
 states = []
 state_values = []
@@ -138,6 +140,7 @@ agent = PPO(env)
 for n_episode in range(1, n_episodes+1):
     state = env.reset()
 
+    episode_length = 0
     for t in range(max_steps):
         time_step += 1
         action, log_prob = agent.policy.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
@@ -160,12 +163,16 @@ for n_episode in range(1, n_episodes+1):
             actions.clear()
             rewards.clear()
             dones.clear()
-    
+
+        episode_length = t
 
         if done:
             break
+    
+    episode_lengths.append(episode_length)
+    
 
 
     
-    if n_episode % 10 == 0:
-        print("Episode: ", n_episode, "Avg. score: ", np.mean(scores))
+    if n_episode % log_interval == 0:
+        print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
