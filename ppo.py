@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 import gym
 from torch.distributions import Categorical
+from torch.distributions import MultivariateNormal
 import numpy as np
 from collections import deque
 
@@ -10,19 +11,22 @@ class ActorCritic(nn.Module):
     def __init__(self, state_size, action_size, hidden_size=32):
         super().__init__()
 
-        self.actor_fc1 = nn.Linear(state_size, hidden_size)
-        self.actor_fc2 = nn.Linear(hidden_size, hidden_size)
+        self.actor_fc1 = nn.Linear(state_size, 2*hidden_size)
+        self.actor_fc2 = nn.Linear(2*hidden_size, hidden_size)
 
         self.actor_mu = nn.Linear(hidden_size, action_size)
         self.actor_sigma = nn.Linear(hidden_size, action_size)
         
         
-        self.critic_fc1 = nn.Linear(state_size, hidden_size)
-        self.critic_fc2 = nn.Linear(hidden_size, hidden_size)
+        self.critic_fc1 = nn.Linear(state_size, 2*hidden_size)
+        self.critic_fc2 = nn.Linear(2*hidden_size, hidden_size)
 
         self.critic_value = nn.Linear(hidden_size, 1)
 
         self.distribution = torch.distributions.Normal
+
+        action_std = 0.5
+        self.action_var = torch.full((action_size,), action_std*action_std)
 
     def forward(self, state):
         x = torch.tanh(self.actor_fc1(state))
@@ -50,6 +54,28 @@ class ActorCritic(nn.Module):
         log_prob = m.log_prob(action)
 
         return log_prob, state_value
+    
+    def evaluate2(self, state, action):   
+        action_mean, _, state_value = self.forward(state)
+        
+        action_var = self.action_var.expand_as(action_mean)
+        # print(action_var.shape)
+        
+
+        cov_mat = torch.diag_embed(action_var)
+        
+        
+        dist = MultivariateNormal(action_mean, cov_mat)
+        
+        # print(action_mean.shape)
+        # print(cov_mat.shape)
+        # print(action.shape)
+        # print(action.unsqueeze(1).shape)
+        action_logprobs = dist.log_prob(action.unsqueeze(1))
+        dist_entropy = dist.entropy()
+        # state_value = self.critic(state)
+        
+        return action_logprobs, torch.squeeze(state_value)#, dist_entropy
 
 
 class PPO():
@@ -65,7 +91,8 @@ class PPO():
         self.policy = ActorCritic(self.state_size, self.action_size)
         self.policy_old = ActorCritic(self.state_size, self.action_size)
 
-        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr)
+        self.MseLoss = nn.MSELoss()
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
 
     def update(self, states, actions, rewards, dones, log_probs):
 
@@ -78,34 +105,45 @@ class PPO():
             discounted_rewards.insert(0, discounted_reward)
         
         discounted_rewards = torch.tensor(discounted_rewards)
+        discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-5)
         
-        old_log_probs = torch.tensor(log_probs).squeeze()
 
         states = torch.tensor(states).squeeze().float()
         actions = torch.tensor(actions)
+        old_log_probs = torch.tensor(log_probs).squeeze()
+        
+        # states = torch.squeeze(torch.stack(states), 1).detach()
+        # actions = torch.squeeze(torch.stack(actions), 1).detach()
+        # old_log_probs = torch.squeeze(torch.stack(log_probs), 1).detach()
 
         for epoch in range(self.K_epochs):
-
+            # print("inside training loop")
             # for state in states:
             #     _, log_prob, state_value = self.policy.evaluate(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
             #     new_log_probs.append(log_prob)
             #     state_values = torch.stack(state_values, 1).squeeze()
+            new_log_probs, state_values = self.policy.evaluate2(states, actions)
 
-            new_log_probs, state_values = self.policy.evaluate(states, actions)
+            # print(actions.shape)
+            # print(states.shape)
+            # print(state_values.shape)
+            # print(discounted_rewards.shape)
+            # print(old_log_probs.shape)
 
             new_log_probs = new_log_probs.squeeze()
             advantages = discounted_rewards - state_values.squeeze()
 
-            ratios = new_log_probs/old_log_probs
+            ratios = torch.exp(new_log_probs - old_log_probs.detach())
             ratios_clipped = torch.clamp(ratios, min=1-self.epsilon, max=1+self.epsilon)
 
-            loss = -torch.min(ratios*advantages, ratios_clipped*advantages)
+            loss = -torch.min(ratios*advantages, ratios_clipped*advantages)#+ 0.5*self.MseLoss(state_values, discounted_rewards)
 
             self.optimizer.zero_grad()
 
             loss.mean().backward()
             self.optimizer.step()
 
+        self.policy_old.load_state_dict(self.policy.state_dict())
 
             
 
@@ -143,8 +181,15 @@ for n_episode in range(1, n_episodes+1):
     episode_length = 0
     for t in range(max_steps):
         time_step += 1
-        action, log_prob = agent.policy.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+
+        # state = torch.FloatTensor(state.reshape(1, -1))
+
+        action, log_prob = agent.policy_old.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
+        # action, log_prob = agent.policy_old.act(state)
         state, reward, done, _ = env.step(action.squeeze(0).numpy())
+
+        # state = torch.FloatTensor(state.reshape(1, -1))
+
         actions.append(action)
         log_probs.append(log_prob)
         states.append(state)
@@ -155,6 +200,8 @@ for n_episode in range(1, n_episodes+1):
         scores.append(total_reward)
 
         if time_step % update_interval == 0:
+            # print("Updating agent")
+            # print("Episode: ", n_episode)
             agent.update(states, actions, rewards, dones, log_probs)
             time_step = 0
             states.clear()
