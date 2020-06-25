@@ -147,7 +147,20 @@ class PPO():
 
             
 
-env = gym.make('MountainCarContinuous-v0')
+
+
+n_episodes = 1000
+max_steps = 1500
+update_interval = 4000
+log_interval = 20
+time_step = 0
+solving_threshold = 100
+
+render = True
+train = False
+
+env_name = 'MountainCarContinuous-v0'
+env = gym.make(env_name)
 env.seed(0)
 print('observation space:', env.observation_space)
 print('action space:', env.action_space)
@@ -156,12 +169,6 @@ action_size = env.action_space.shape[0]
 # agent = ActorCritic(state_size, action_size)
 # action = agent.act(torch.from_numpy(state).float().unsqueeze(0))
 # print(action)
-
-n_episodes = 1000
-max_steps = 1500
-update_interval = 4000
-log_interval = 20
-time_step = 0
 
 scores = deque(maxlen=log_interval)
 episode_lengths = deque(maxlen=log_interval)
@@ -175,6 +182,10 @@ dones =  []
 
 agent = PPO(env)
 
+if not train:
+    agent.policy_old.load_state_dict(torch.load('./PPO_model_solved_'+env_name+'.pth'))
+    agent.policy_old.eval()
+
 for n_episode in range(1, n_episodes+1):
     state = env.reset()
 
@@ -183,33 +194,35 @@ for n_episode in range(1, n_episodes+1):
         time_step += 1
 
         # state = torch.FloatTensor(state.reshape(1, -1))
-
+        
         action, log_prob = agent.policy_old.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
         # action, log_prob = agent.policy_old.act(state)
         state, reward, done, _ = env.step(action.squeeze(0).numpy())
 
         # state = torch.FloatTensor(state.reshape(1, -1))
-
-        actions.append(action)
-        log_probs.append(log_prob)
-        states.append(state)
         rewards.append(reward)
-        dones.append(done)
+        
+        if render:
+            env.render()
 
-        total_reward = sum(rewards)
-        scores.append(total_reward)
+        if train:
 
-        if time_step % update_interval == 0:
-            # print("Updating agent")
-            # print("Episode: ", n_episode)
-            agent.update(states, actions, rewards, dones, log_probs)
-            time_step = 0
-            states.clear()
-            state_values.clear()
-            log_probs.clear()
-            actions.clear()
-            rewards.clear()
-            dones.clear()
+            actions.append(action)
+            log_probs.append(log_prob)
+            states.append(state)
+            dones.append(done)
+
+            if time_step % update_interval == 0:
+                # print("Updating agent")
+                # print("Episode: ", n_episode)
+                agent.update(states, actions, rewards, dones, log_probs)
+                time_step = 0
+                states.clear()
+                state_values.clear()
+                log_probs.clear()
+                actions.clear()
+                rewards.clear()
+                dones.clear()
 
         episode_length = t
 
@@ -217,9 +230,19 @@ for n_episode in range(1, n_episodes+1):
             break
     
     episode_lengths.append(episode_length)
-    
+    total_reward = sum(rewards[-episode_length:])
+    print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
+    scores.append(total_reward)
+    total_reward = 0
 
+    if train: 
+        if n_episode % log_interval == 0:
+            print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
 
-    
-    if n_episode % log_interval == 0:
-        print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
+        if np.mean(scores) > solving_threshold:
+            print("Environment solved, saving model")
+            torch.save(agent.policy_old.state_dict(), 'PPO_model_solved_{}.pth'.format(env_name))
+
+        if n_episode % 300 == 0:
+            print("Saving model")
+            torch.save(agent.policy_old.state_dict(), 'PPO_model_{}_epoch_{}.pth'.format(env_name, n_episode))
