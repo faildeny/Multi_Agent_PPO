@@ -4,8 +4,10 @@ import torch.nn.functional as F
 import gym
 from torch.distributions import Categorical
 from torch.distributions import MultivariateNormal
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 from collections import deque
+import time
 
 class ActorCritic(nn.Module):
     def __init__(self, state_size, action_size, hidden_size=32):
@@ -210,6 +212,7 @@ if pretrained:
     agent.policy_old.load_state_dict(torch.load('./PPO_model_best_'+env_name+'.pth'))
     agent.policy.load_state_dict(torch.load('./PPO_model_best_'+env_name+'.pth'))
 
+writer = SummaryWriter(log_dir='logs/'+env_name+'_'+str(time.time()))
 
 for n_episode in range(1, n_episodes+1):
     state = env.reset()
@@ -259,8 +262,10 @@ for n_episode in range(1, n_episodes+1):
     total_reward = sum(rewards[-episode_length:])
     # print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
     scores.append(total_reward)
+    writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
+    writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
     total_reward = 0
-
+    
     if train: 
         if n_episode % log_interval == 0:
             print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
@@ -278,3 +283,5 @@ for n_episode in range(1, n_episodes+1):
         # if n_episode % 300 == 0:
         #     print("Saving model")
         #     torch.save(agent.policy_old.state_dict(), 'PPO_model_{}_epoch_{}.pth'.format(env_name, n_episode))
+
+writer.close()
