@@ -169,7 +169,7 @@ class PPO():
 
 
 n_episodes = 10000
-max_steps = 1500
+max_steps = 3000
 update_interval = 4000
 log_interval = 20
 time_step = 0
@@ -191,13 +191,8 @@ action_size = env.action_space.shape[0]
 scores = deque(maxlen=log_interval)
 max_score = -1000
 episode_lengths = deque(maxlen=log_interval)
-
-states = []
-state_values = []
-log_probs = []
-actions =  []
 rewards =  []
-dones =  []
+
 memory = Memory()
 
 agent = PPO(env)
@@ -210,8 +205,8 @@ else:
 
 
 if pretrained:
-    agent.policy_old.load_state_dict(torch.load('./PPO_model_best_'+env_name+'.pth'))
-    agent.policy.load_state_dict(torch.load('./PPO_model_best_'+env_name+'.pth'))
+    agent.policy_old.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
+    agent.policy.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
 
 # with imageio.get_writer('./videos/run.gif', mode='I', fps=50) as writer:
 
@@ -267,10 +262,13 @@ for n_episode in range(1, n_episodes+1):
 
             max_score = total_reward
             torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
-        
+
         writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
         writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
     
+    else:
+        print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
+        
     total_reward = 0
 
 writer.close()
