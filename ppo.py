@@ -69,14 +69,12 @@ class ActorCritic(nn.Module):
         action_mean, _, state_value = self.forward(state)
         
         action_var = self.action_var.expand_as(action_mean)
-
         cov_mat = torch.diag_embed(action_var).to(device)
         
         dist = MultivariateNormal(action_mean, cov_mat)
         
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
-        # state_value = self.critic(state)
         
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
@@ -88,7 +86,7 @@ class Memory:
         self.states = []
         self.logprobs = []
         self.rewards = []
-        self.is_terminals = []
+        self.dones = []
         self.state_values = []
     
     def clear_memory(self):
@@ -96,7 +94,7 @@ class Memory:
         del self.states[:]
         del self.logprobs[:]
         del self.rewards[:]
-        del self.is_terminals[:]
+        del self.dones[:]
         del self.state_values[:]
 
 
@@ -121,7 +119,7 @@ class PPO():
         states = memory.states
         actions = memory.actions
         rewards = memory.rewards
-        dones = memory.is_terminals
+        dones = memory.dones
         log_probs = memory.logprobs 
 
         discounted_rewards = []
@@ -138,11 +136,6 @@ class PPO():
         
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
         discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-5)
-        
-        # states = torch.tensor(states).squeeze().float()
-
-        # actions = torch.tensor(actions)
-        # old_log_probs = torch.tensor(log_probs).squeeze()
         
         states = torch.squeeze(torch.stack(states), 1).detach()
         actions = torch.squeeze(torch.stack(actions), 1).detach()
@@ -221,34 +214,28 @@ for n_episode in range(1, n_episodes+1):
     state = env.reset()
     state = torch.FloatTensor(state.reshape(1, -1))
 
-
     episode_length = 0
     for t in range(max_steps):
         time_step += 1
 
-        # state = torch.FloatTensor(state.reshape(1, -1))
         action = agent.select_action(state, memory)
-        # action, log_prob, state_value = agent.policy_old.act(torch.from_numpy(state).float().reshape(-1).unsqueeze(0))
-        # action, log_prob = agent.policy_old.act(state)
-        # state, reward, done, _ = env.step(action.squeeze(0).numpy())
+        
         state, reward, done, _ = env.step(action)
+
         state = torch.FloatTensor(state.reshape(1, -1))
 
         memory.rewards.append(reward)
-        memory.is_terminals.append(done)
-        # state = torch.FloatTensor(state.reshape(1, -1))
+        memory.dones.append(done)
         rewards.append(reward)
         state_value = 0
         
         if render:
             env.render()
-                # image = env.render(mode = 'rgb_array')
-                # writer.append_data(image)
+            # image = env.render(mode = 'rgb_array')
+            # writer.append_data(image)
 
         if train:
             if time_step % update_interval == 0:
-                # print("Updating agent")
-                # print("Episode: ", n_episode)
                 agent.update(memory)
                 time_step = 0
                 memory.clear_memory()
@@ -260,10 +247,9 @@ for n_episode in range(1, n_episodes+1):
     
     episode_lengths.append(episode_length)
     total_reward = sum(memory.rewards[-episode_length:])
-    # print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
     scores.append(total_reward)
     
-    if train: 
+    if train:
         if n_episode % log_interval == 0:
             print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
 
@@ -276,13 +262,10 @@ for n_episode in range(1, n_episodes+1):
 
             max_score = total_reward
             torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
+        
         writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
         writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
     
     total_reward = 0
-
-        # if n_episode % 300 == 0:
-        #     print("Saving model")
-        #     torch.save(agent.policy_old.state_dict(), 'PPO_model_{}_epoch_{}.pth'.format(env_name, n_episode))
 
 writer.close()
