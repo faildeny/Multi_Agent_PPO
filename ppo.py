@@ -11,7 +11,7 @@ import time
 import imageio
 
 class ActorCritic(nn.Module):
-    def __init__(self, state_size, action_size, action_std=0.5, hidden_size=32):
+    def __init__(self, state_size, action_size, action_std=0.5, hidden_size=32, low_policy_weights_init=True):
         super().__init__()
 
         self.actor_fc1 = nn.Linear(state_size, 2*hidden_size)
@@ -29,6 +29,11 @@ class ActorCritic(nn.Module):
         self.distribution = torch.distributions.Normal
 
         self.action_var = torch.full((action_size,), action_std*action_std)
+        
+        # Boosts training performance in the beginning
+        if low_policy_weights_init:
+            with torch.no_grad():
+                self.actor_mu.weight.mul_(0.01)
 
     def forward(self, state):
         x = torch.tanh(self.actor_fc1(state))
