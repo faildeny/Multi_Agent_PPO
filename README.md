@@ -9,11 +9,16 @@ The algorithm is based on the description provided in original [Proximal Policy 
 All dependencies are provided in `requirements.txt` file.
 The implementation uses Pytorch for training and Gym for environments. The imageio is an optional dependency needed to save GIFs from rendered environment. 
 
-## Example
+## Example result
+Training progress of an agent in `BipedalWalker-v3` environment. | Training chart with score averaged over 20 consecutive episodes (marked with red) 
 
-![](images/walker_2000.gif) | ![](images/walker_chart.png)
---- | ---
-Example of a trained agent in `BipedalWalker-v3` environment after 5800 episodes. | Training chart with score averaged over 20 consecutive episodes (marked with red) 
+![](images/walker_500.gif) | ![](images/walker_2000.gif) | ![](images/walker_5000.gif)
+:---: | :---: | :---:
+500 episodes | 2000 episodes | 5000 episodes
+
+ | ![](images/walker_chart2.png) |
+ | :---: |
+| Training chart with score averaged over 20 consecutive episodes (marked with red) | 
 
 ## Implementation details
 
