@@ -12,5 +12,7 @@ The implementation uses Pytorch for training and Gym for environments. The image
 
 
 ## Example
-Example of a trained agent in 'BipedalWalker-v3' environment after 2000 episodes.
-![](images/walker_2000.gif)
+
+![](images/walker_2000.gif) | ![](images/walker_chart.png)
+--- | ---
+Example of a trained agent in 'BipedalWalker-v3' environment after 5800 episodes. | Training chart with score averaged over 20 consecutive episodes (marked with red) 
