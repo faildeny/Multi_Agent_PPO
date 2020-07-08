@@ -48,6 +48,7 @@ class ActorCritic(nn.Module):
         return mu, sigma, state_value 
 
     def act(self, state, memory):
+        '''Choose action according to the policy.'''
         action_mu, action_sigma, state_value = self.forward(state)
 
         action_var = self.action_var.expand_as(action_mu)
@@ -64,14 +65,15 @@ class ActorCritic(nn.Module):
     
 
     def evaluateStd(self, state, action):
-
+        '''Evaluate action using learned std value for distribution.'''
         action_mu, action_sigma, state_value = self.forward(state)
         m = self.distribution(action_mu.squeeze(), action_sigma.squeeze())
         log_prob = m.log_prob(action)
 
         return log_prob, state_value
 
-    def evaluate(self, state, action):   
+    def evaluate(self, state, action):
+        '''Evaluate action for a given state.'''   
         action_mean, _, state_value = self.forward(state)
         
         action_var = self.action_var.expand_as(action_mean)
@@ -84,9 +86,8 @@ class ActorCritic(nn.Module):
         
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 class Memory:
+    '''Simple buffer to collect experiences and clear after each update.'''
     def __init__(self):
         self.actions = []
         self.states = []
@@ -105,6 +106,7 @@ class Memory:
 
 
 class PPO():
+    '''Proximal Policy Optimization algorithm.'''
     def __init__(self, env):
 
         self.state_size = env.observation_space.shape[0]
@@ -119,9 +121,14 @@ class PPO():
 
         self.MseLoss = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
+    
+    def select_action(self, state, memory):
+        '''Get action using state in numpy format'''
+        state = torch.FloatTensor(state.reshape(1, -1))
+        return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
 
     def update(self, memory):
-
+        '''Update agent's network using collected set of experiences.'''
         states = memory.states
         actions = memory.actions
         rewards = memory.rewards
@@ -162,11 +169,6 @@ class PPO():
 
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-    def select_action(self, state, memory):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
-    
-
 
 n_episodes = 1
 max_steps = 600
@@ -176,8 +178,8 @@ time_step = 0
 solving_threshold = 300
 
 render = True
-train = False
-pretrained = True
+train = True
+pretrained = False
 tensorboard_logging = True
 
 # env_name = 'MountainCarContinuous-v0'
