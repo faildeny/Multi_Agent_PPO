@@ -49,7 +49,6 @@ class ActorCritic(nn.Module):
 
     def act(self, state, memory):
         action_mu, action_sigma, state_value = self.forward(state)
-        # m = self.distribution(action_mu, action_sigma)
 
         action_var = self.action_var.expand_as(action_mu)
         cov_mat = torch.diag_embed(action_var)
@@ -61,9 +60,11 @@ class ActorCritic(nn.Module):
         memory.actions.append(action)
         memory.logprobs.append(log_prob)
 
-        return action.detach()#, log_prob, state_value
+        return action.detach()
     
-    def evaluate5(self, state, action):
+
+    def evaluateStd(self, state, action):
+
         action_mu, action_sigma, state_value = self.forward(state)
         m = self.distribution(action_mu.squeeze(), action_sigma.squeeze())
         log_prob = m.log_prob(action)
@@ -138,7 +139,6 @@ class PPO():
         discounted_rewards = torch.tensor(discounted_rewards)
         # old_state_values = torch.stack(state_values, 1).detach()
         # advantages = discounted_rewards - old_state_values.detach().squeeze()
-        
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
         discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-5)
         
@@ -168,16 +168,17 @@ class PPO():
     
 
 
-n_episodes = 10000
-max_steps = 3000
+n_episodes = 1
+max_steps = 600
 update_interval = 4000
 log_interval = 20
 time_step = 0
 solving_threshold = 300
 
-render = False
-train = True
-pretrained = False
+render = True
+train = False
+pretrained = True
+tensorboard_logging = True
 
 # env_name = 'MountainCarContinuous-v0'
 env_name = "BipedalWalker-v3"
@@ -198,7 +199,6 @@ memory = Memory()
 agent = PPO(env)
 
 if not train:
-    # agent.policy_old.load_state_dict(torch.load('./PPO_model_solved_'+env_name+'.pth'))
     agent.policy_old.eval()
 else:
     writer = SummaryWriter(log_dir='logs/'+env_name+'_'+str(time.time()))
@@ -208,7 +208,7 @@ if pretrained:
     agent.policy_old.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
     agent.policy.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
 
-# with imageio.get_writer('./videos/run.gif', mode='I', fps=50) as writer:
+writerImage = imageio.get_writer('./images/run.gif', mode='I', fps=25)
 
 for n_episode in range(1, n_episodes+1):
     state = env.reset()
@@ -230,9 +230,9 @@ for n_episode in range(1, n_episodes+1):
         state_value = 0
         
         if render:
-            env.render()
-            # image = env.render(mode = 'rgb_array')
-            # writer.append_data(image)
+            image = env.render(mode = 'rgb_array')
+            # if time_step % 2 == 0:
+            #     writerImage.append_data(image)
 
         if train:
             if time_step % update_interval == 0:
@@ -263,12 +263,11 @@ for n_episode in range(1, n_episodes+1):
             max_score = total_reward
             torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
 
-        writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
-        writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
+        if tensorboard_logging:
+            writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
+            writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
     
     else:
         print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
         
     total_reward = 0
-
-writer.close()
