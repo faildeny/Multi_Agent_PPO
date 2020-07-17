@@ -1,14 +1,27 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-import gym
 from torch.distributions import Categorical
 from torch.distributions import MultivariateNormal
-from torch.utils.tensorboard import SummaryWriter
 import numpy as np
-from collections import deque
-import time
-import imageio
+
+class MemoryBuffer:
+    '''Simple buffer to collect experiences and clear after each update.'''
+    def __init__(self):
+        self.actions = []
+        self.states = []
+        self.logprobs = []
+        self.rewards = []
+        self.dones = []
+        self.state_values = []
+    
+    def clear_buffer(self):
+        del self.actions[:]
+        del self.states[:]
+        del self.logprobs[:]
+        del self.rewards[:]
+        del self.dones[:]
+        del self.state_values[:]
 
 class ActorCritic(nn.Module):
     def __init__(self, state_size, action_size, action_std=0.5, hidden_size=32, low_policy_weights_init=True):
@@ -77,7 +90,7 @@ class ActorCritic(nn.Module):
         action_mean, _, state_value = self.forward(state)
         
         action_var = self.action_var.expand_as(action_mean)
-        cov_mat = torch.diag_embed(action_var).to(device)
+        cov_mat = torch.diag_embed(action_var)
         
         dist = MultivariateNormal(action_mean, cov_mat)
         
@@ -86,38 +99,19 @@ class ActorCritic(nn.Module):
         
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
-class Memory:
-    '''Simple buffer to collect experiences and clear after each update.'''
-    def __init__(self):
-        self.actions = []
-        self.states = []
-        self.logprobs = []
-        self.rewards = []
-        self.dones = []
-        self.state_values = []
-    
-    def clear_memory(self):
-        del self.actions[:]
-        del self.states[:]
-        del self.logprobs[:]
-        del self.rewards[:]
-        del self.dones[:]
-        del self.state_values[:]
-
-
 class PPO():
     '''Proximal Policy Optimization algorithm.'''
-    def __init__(self, env):
+    def __init__(self, state_size, action_size, lr=1e-4, gamma=0.99, epsilon_clip=0.2, epochs=80, action_std=0.5):
 
-        self.state_size = env.observation_space.shape[0]
-        self.action_size = env.action_space.shape[0]
-        self.lr = 0.0003
-        self.gamma  = 0.99
-        self.eps_clip = 0.2
-        self.K_epochs = 80
+        self.state_size = state_size
+        self.action_size = action_size
+        self.lr = lr
+        self.gamma  = gamma
+        self.epsilon_clip = epsilon_clip
+        self.K_epochs = epochs
 
-        self.policy = ActorCritic(self.state_size, self.action_size, 0.5)
-        self.policy_old = ActorCritic(self.state_size, self.action_size, 0.5)
+        self.policy = ActorCritic(self.state_size, self.action_size, action_std)
+        self.policy_old = ActorCritic(self.state_size, self.action_size, action_std)
 
         self.MseLoss = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
@@ -160,7 +154,7 @@ class PPO():
             new_log_probs = new_log_probs.squeeze()
             advantages = discounted_rewards - state_values.detach().squeeze()
             ratios = torch.exp(new_log_probs - old_log_probs.detach())
-            ratios_clipped = torch.clamp(ratios, min=1-self.eps_clip, max=1+self.eps_clip)
+            ratios_clipped = torch.clamp(ratios, min=1-self.epsilon_clip, max=1+self.epsilon_clip)
             loss = -torch.min(ratios*advantages, ratios_clipped*advantages)+ 0.5*self.MseLoss(state_values, discounted_rewards) - 0.01*dist_entropy
 
             self.optimizer.zero_grad()
@@ -168,108 +162,3 @@ class PPO():
             self.optimizer.step()
 
         self.policy_old.load_state_dict(self.policy.state_dict())
-
-
-n_episodes = 1
-max_steps = 600
-update_interval = 4000
-log_interval = 20
-time_step = 0
-solving_threshold = 300
-
-render = True
-train = True
-pretrained = False
-tensorboard_logging = True
-
-# env_name = 'MountainCarContinuous-v0'
-env_name = "BipedalWalker-v3"
-env = gym.make(env_name)
-env.seed(0)
-print('observation space:', env.observation_space)
-print('action space:', env.action_space)
-state_size = env.observation_space.shape[0]
-action_size = env.action_space.shape[0]
-
-scores = deque(maxlen=log_interval)
-max_score = -1000
-episode_lengths = deque(maxlen=log_interval)
-rewards =  []
-
-memory = Memory()
-
-agent = PPO(env)
-
-if not train:
-    agent.policy_old.eval()
-else:
-    writer = SummaryWriter(log_dir='logs/'+env_name+'_'+str(time.time()))
-
-
-if pretrained:
-    agent.policy_old.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
-    agent.policy.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
-
-writerImage = imageio.get_writer('./images/run.gif', mode='I', fps=25)
-
-for n_episode in range(1, n_episodes+1):
-    state = env.reset()
-    state = torch.FloatTensor(state.reshape(1, -1))
-
-    episode_length = 0
-    for t in range(max_steps):
-        time_step += 1
-
-        action = agent.select_action(state, memory)
-        
-        state, reward, done, _ = env.step(action)
-
-        state = torch.FloatTensor(state.reshape(1, -1))
-
-        memory.rewards.append(reward)
-        memory.dones.append(done)
-        rewards.append(reward)
-        state_value = 0
-        
-        if render:
-            image = env.render(mode = 'rgb_array')
-            # if time_step % 2 == 0:
-            #     writerImage.append_data(image)
-
-        if train:
-            if time_step % update_interval == 0:
-                agent.update(memory)
-                time_step = 0
-                memory.clear_memory()
-
-        episode_length = t
-
-        if done:
-            break
-    
-    episode_lengths.append(episode_length)
-    total_reward = sum(memory.rewards[-episode_length:])
-    scores.append(total_reward)
-    
-    if train:
-        if n_episode % log_interval == 0:
-            print("Episode: ", n_episode, "\t Avg. episode length: ", np.mean(episode_lengths), "\t Avg. score: ", np.mean(scores))
-
-            if np.mean(scores) > solving_threshold:
-                print("Environment solved, saving model")
-                torch.save(agent.policy_old.state_dict(), 'PPO_model_solved_{}.pth'.format(env_name))
-            
-        if total_reward > max_score:
-            print("Saving improved model")
-
-            max_score = total_reward
-            torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
-
-        if tensorboard_logging:
-            writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
-            writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
-    
-    else:
-        print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
-        
-    total_reward = 0
