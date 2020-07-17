@@ -1,4 +1,4 @@
-import gym
+from unityagents import UnityEnvironment
 import torch
 import numpy as np
 from collections import deque
@@ -7,7 +7,7 @@ import imageio
 from torch.utils.tensorboard import SummaryWriter
 from ppo import PPO, MemoryBuffer
 
-env_name = "BipedalWalker-v3"
+env_name = "Reacher"
 
 n_episodes = 1000
 max_steps = 1600
@@ -21,12 +21,16 @@ train = True
 pretrained = False
 tensorboard_logging = True
 
-env = gym.make(env_name)
-env.seed(0)
-print('observation space:', env.observation_space)
-print('action space:', env.action_space)
-state_size = env.observation_space.shape[0]
-action_size = env.action_space.shape[0]
+env = UnityEnvironment(file_name='../Reacher_Windows_x86_64_twenty/Reacher.exe', no_graphics=False)
+brain_name = env.brain_names[0]
+print("Brain name: ",env.brain_names)
+brain = env.brains[brain_name]
+
+env_info = env.reset(train_mode=True)[brain_name]
+action_size = brain.vector_action_space_size
+states = env_info.vector_observations
+state_size = states.shape[1]
+
 
 scores = deque(maxlen=log_interval)
 max_score = -1000
@@ -49,14 +53,16 @@ if pretrained:
 writerImage = imageio.get_writer('./images/run.gif', mode='I', fps=25)
 
 for n_episode in range(1, n_episodes+1):
-    state = env.reset()
+    env_info = env.reset(train_mode=True)[brain_name]
+    states = env_info.vector_observations
+    state = states[0]
     state = torch.FloatTensor(state.reshape(1, -1))
 
     episode_length = 0
     for t in range(max_steps):
         time_step += 1
 
-        action, log_prob = agent.select_action(state, memory)
+        action, log_prob = agent.select_action(state)
         
 
         state = torch.FloatTensor(state.reshape(1, -1))
@@ -65,7 +71,22 @@ for n_episode in range(1, n_episodes+1):
         memory.actions.append(action)
         memory.logprobs.append(log_prob)
 
-        state, reward, done, _ = env.step(action.data.numpy().flatten())
+        actions = []
+        ## Unity env style
+        for agent_id in range(0,20):
+            actions.append(action.data.numpy().flatten())
+
+        env_info = env.step(actions)[brain_name]           # send all actions to tne environment
+        
+        states = env_info.vector_observations         # get next state (for each agent)
+        rewards = env_info.rewards                         # get reward (for each agent)
+        dones = env_info.local_done   
+        
+        state = states[0]
+        reward = rewards[0]
+        done = dones[0]
+
+        # state, reward, done, _ = env.step(action.data.numpy().flatten())
 
 
         memory.rewards.append(reward)
@@ -73,8 +94,8 @@ for n_episode in range(1, n_episodes+1):
         rewards.append(reward)
         state_value = 0
         
-        if render:
-            image = env.render(mode = 'rgb_array')
+        # if render:
+        #     image = env.render(mode = 'rgb_array')
             # if time_step % 2 == 0:
             #     writerImage.append_data(image)
 
@@ -108,8 +129,8 @@ for n_episode in range(1, n_episodes+1):
             torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
 
         if tensorboard_logging:
-            writer.add_scalars('Score', {'Score':total_reward, 'Avg. Score': np.mean(scores)}, n_episode)
-            writer.add_scalars('Episode length', {'Episode length':episode_length, 'Avg. Episode length': np.mean(episode_lengths)}, n_episode)
+            writer.add_scalars('Score', {'Score':total_reward, 'Avg._Score': np.mean(scores)}, n_episode)
+            writer.add_scalars('Episode_length', {'Episode_length':episode_length, 'Avg._Episode length': np.mean(episode_lengths)}, n_episode)
     
     else:
         print("Episode: ", n_episode, "\t Episode length: ", episode_length, "\t Score: ", total_reward)
