@@ -10,7 +10,7 @@ from ppo import PPO, MemoryBuffer
 env_name = "BipedalWalker-v3"
 
 n_episodes = 1000
-max_steps = 600
+max_steps = 1600
 update_interval = 4000
 log_interval = 20
 solving_threshold = 300
