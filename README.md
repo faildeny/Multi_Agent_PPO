@@ -1,7 +1,7 @@
-# PPO implementation in Pytorch
+# Multi Agent PPO implementation for Unity environments
 
 ## General info
-The implementation is written for environments with continuous action space. Currently, only one agent learning is supported.
+The implementation is written for multi agent environments with continuous action space.
 
 The code has been written as an exercise while exploring Reinforcement Learning concepts. 
 The algorithm is based on the description provided in original [Proximal Policy Optimization paper](https://arxiv.org/abs/1707.06347) by OpenAI. However, to get a working version of algorithm, important code-level details were added from [The 32 Implementation Details of Proximal Policy Optimization (PPO) Algorithm](https://costa.sh/blog-the-32-implementation-details-of-ppo.html) and this [implementation](https://github.com/nikhilbarhate99/PPO-PyTorch). For more info check [Implementation details](#implementation-details)
