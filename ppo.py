@@ -60,7 +60,7 @@ class ActorCritic(nn.Module):
 
         return mu, sigma, state_value 
 
-    def act(self, state, memory):
+    def act(self, state):
         '''Choose action according to the policy.'''
         action_mu, action_sigma, state_value = self.forward(state)
 
@@ -70,13 +70,8 @@ class ActorCritic(nn.Module):
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        memory.states.append(state)
-        memory.actions.append(action)
-        memory.logprobs.append(log_prob)
-
-        return action.detach()
+        return action.detach(), log_prob.detach()
     
-
     def evaluateStd(self, state, action):
         '''Evaluate action using learned std value for distribution.'''
         action_mu, action_sigma, state_value = self.forward(state)
@@ -116,10 +111,11 @@ class PPO():
         self.MseLoss = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
     
-    def select_action(self, state, memory):
+    def select_action(self, state):
         '''Get action using state in numpy format'''
         state = torch.FloatTensor(state.reshape(1, -1))
-        return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
+        
+        return self.policy_old.act(state)
 
     def update(self, memory):
         '''Update agent's network using collected set of experiences.'''

@@ -56,11 +56,17 @@ for n_episode in range(1, n_episodes+1):
     for t in range(max_steps):
         time_step += 1
 
-        action = agent.select_action(state, memory)
+        action, log_prob = agent.select_action(state, memory)
         
-        state, reward, done, _ = env.step(action)
 
         state = torch.FloatTensor(state.reshape(1, -1))
+
+        memory.states.append(state)
+        memory.actions.append(action)
+        memory.logprobs.append(log_prob)
+
+        state, reward, done, _ = env.step(action.data.numpy().flatten())
+
 
         memory.rewards.append(reward)
         memory.dones.append(done)
