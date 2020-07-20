@@ -9,16 +9,17 @@ from ppo import PPO, MemoryBuffer
 
 env_name = "Reacher"
 
-n_episodes = 1000
+n_agents = 20
+n_episodes = 4000
 max_steps = 1600
-update_interval = 4000
-log_interval = 20
+update_interval = 4000/n_agents
+log_interval = 10
 solving_threshold = 300
 time_step = 0
 
 render = False
-train = True
-pretrained = False
+train = False
+pretrained = True
 tensorboard_logging = True
 
 env = UnityEnvironment(file_name='../Reacher_Windows_x86_64_twenty/Reacher.exe', no_graphics=False)
@@ -30,7 +31,8 @@ env_info = env.reset(train_mode=True)[brain_name]
 action_size = brain.vector_action_space_size
 states = env_info.vector_observations
 state_size = states.shape[1]
-
+print("State size: ", state_size)
+print("Action size: ", action_size)
 
 scores = deque(maxlen=log_interval)
 max_score = -1000
@@ -47,8 +49,8 @@ else:
     writer = SummaryWriter(log_dir='logs/'+env_name+'_'+str(time.time()))
 
 if pretrained:
-    agent.policy_old.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
-    agent.policy.load_state_dict(torch.load('./PPO_modeldebug_best_'+env_name+'.pth'))
+    agent.policy_old.load_state_dict(torch.load('./'+env_name+'_model_300_episodes.pth'))
+    agent.policy.load_state_dict(torch.load('./'+env_name+'_model_300_episodes.pth'))
 
 writerImage = imageio.get_writer('./images/run.gif', mode='I', fps=25)
 
@@ -56,27 +58,27 @@ for n_episode in range(1, n_episodes+1):
     env_info = env.reset(train_mode=True)[brain_name]
     states = env_info.vector_observations
     state = states[0]
-    state = torch.FloatTensor(state.reshape(1, -1))
-
+    states = torch.FloatTensor(states)
+    # print("States shape: ", states.shape)
+    # state = torch.FloatTensor(state.reshape(1, -1))
     episode_length = 0
     for t in range(max_steps):
         time_step += 1
 
-        action, log_prob = agent.select_action(state)
+        actions, log_probs = agent.select_action(states)
         
 
-        state = torch.FloatTensor(state.reshape(1, -1))
+        states = torch.FloatTensor(states)
+        memory.states.append(states)
+        memory.actions.append(actions)
+        memory.logprobs.append(log_probs)
 
-        memory.states.append(state)
-        memory.actions.append(action)
-        memory.logprobs.append(log_prob)
+        # actions = []
+        # ## Unity env style
+        # for agent_id in range(0,20):
+        #     actions.append(action.data.numpy().flatten())
 
-        actions = []
-        ## Unity env style
-        for agent_id in range(0,20):
-            actions.append(action.data.numpy().flatten())
-
-        env_info = env.step(actions)[brain_name]           # send all actions to tne environment
+        env_info = env.step(actions.data.numpy())[brain_name]           # send all actions to tne environment
         
         states = env_info.vector_observations         # get next state (for each agent)
         rewards = env_info.rewards                         # get reward (for each agent)
@@ -89,9 +91,9 @@ for n_episode in range(1, n_episodes+1):
         # state, reward, done, _ = env.step(action.data.numpy().flatten())
 
 
-        memory.rewards.append(reward)
-        memory.dones.append(done)
-        rewards.append(reward)
+        memory.rewards.append(rewards)
+        memory.dones.append(dones)
+        # rewards_set.append(rewards)
         state_value = 0
         
         # if render:
@@ -111,7 +113,7 @@ for n_episode in range(1, n_episodes+1):
             break
     
     episode_lengths.append(episode_length)
-    total_reward = sum(memory.rewards[-episode_length:])
+    total_reward = np.sum(memory.rewards[-episode_length:])
     scores.append(total_reward)
     
     if train:
@@ -121,12 +123,15 @@ for n_episode in range(1, n_episodes+1):
             if np.mean(scores) > solving_threshold:
                 print("Environment solved, saving model")
                 torch.save(agent.policy_old.state_dict(), 'PPO_model_solved_{}.pth'.format(env_name))
+        
+        if n_episode % 100 == 0:
+            print("Saving model after ", n_episode, " episodes")
+            torch.save(agent.policy_old.state_dict(), '{}_model_{}_episodes.pth'.format(env_name, n_episode))
             
         if total_reward > max_score:
             print("Saving improved model")
-
             max_score = total_reward
-            torch.save(agent.policy_old.state_dict(), 'PPO_modeldebug_best_{}.pth'.format(env_name))
+            torch.save(agent.policy_old.state_dict(), '{}_model_best.pth'.format(env_name))
 
         if tensorboard_logging:
             writer.add_scalars('Score', {'Score':total_reward, 'Avg._Score': np.mean(scores)}, n_episode)

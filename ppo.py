@@ -22,7 +22,28 @@ class MemoryBuffer:
         del self.rewards[:]
         del self.dones[:]
         del self.state_values[:]
+    
+    def get_ordered_trajectories(self):
+        ordered_actions = torch.FloatTensor()
+        ordered_states = torch.FloatTensor()
+        ordered_logprobs = torch.FloatTensor()
+        ordered_rewards = []
+        ordered_dones = []
+        
+        actions = torch.stack(self.actions)
+        states = torch.stack(self.states)
+        logprobs = torch.stack(self.logprobs)
 
+        self.ordered_actions = torch.FloatTensor()
+        for index in range(actions.shape[1]):
+            ordered_states = torch.cat((ordered_states, states[:, index]), 0)
+            ordered_actions = torch.cat((ordered_actions, actions[:, index]), 0)
+            ordered_logprobs = torch.cat((ordered_logprobs, logprobs[:, index]), 0)
+            ordered_rewards.extend(np.asarray(self.rewards)[:, index])
+            ordered_dones.extend(np.asarray(self.dones)[:, index])
+
+        return ordered_states, ordered_actions, ordered_logprobs, ordered_rewards, ordered_dones
+        
 class ActorCritic(nn.Module):
     def __init__(self, state_size, action_size, action_std=0.5, hidden_size=32, low_policy_weights_init=True):
         super().__init__()
@@ -110,20 +131,19 @@ class PPO():
 
         self.MseLoss = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
+
+        self.episode = 0
     
     def select_action(self, state):
         '''Get action using state in numpy format'''
-        state = torch.FloatTensor(state.reshape(1, -1))
+        # state = torch.FloatTensor(state.reshape(1, -1))
+        state = torch.FloatTensor(state)
         
         return self.policy_old.act(state)
 
     def update(self, memory):
         '''Update agent's network using collected set of experiences.'''
-        states = memory.states
-        actions = memory.actions
-        rewards = memory.rewards
-        dones = memory.dones
-        log_probs = memory.logprobs 
+        states, actions, log_probs, rewards, dones = memory.get_ordered_trajectories()
 
         discounted_rewards = []
         discounted_reward = 0
@@ -139,9 +159,14 @@ class PPO():
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
         discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-5)
         
-        states = torch.squeeze(torch.stack(states), 1).detach()
-        actions = torch.squeeze(torch.stack(actions), 1).detach()
-        old_log_probs = torch.squeeze(torch.stack(log_probs), 1).detach()
+        # states = torch.squeeze(torch.stack(states), 1).detach()
+        # actions = torch.squeeze(torch.stack(actions), 1).detach()
+        # old_log_probs = torch.squeeze(torch.stack(log_probs), 1).detach()
+
+        states = states.detach()
+        actions = actions.detach()
+        old_log_probs = log_probs.detach()
+
 
         for epoch in range(self.K_epochs):
 
