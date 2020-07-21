@@ -12,14 +12,14 @@ env_name = "Reacher"
 n_agents = 20
 n_episodes = 4000
 max_steps = 1600
-update_interval = 4000/n_agents
+update_interval = 16000/n_agents
 log_interval = 10
-solving_threshold = 300
+solving_threshold = 30
 time_step = 0
 
 render = False
-train = False
-pretrained = True
+train = True
+pretrained = False
 tensorboard_logging = True
 
 env = UnityEnvironment(file_name='../Reacher_Windows_x86_64_twenty/Reacher.exe', no_graphics=False)
@@ -49,8 +49,8 @@ else:
     writer = SummaryWriter(log_dir='logs/'+env_name+'_'+str(time.time()))
 
 if pretrained:
-    agent.policy_old.load_state_dict(torch.load('./'+env_name+'_model_300_episodes.pth'))
-    agent.policy.load_state_dict(torch.load('./'+env_name+'_model_300_episodes.pth'))
+    agent.policy_old.load_state_dict(torch.load('./'+env_name+'_model_best_old.pth'))
+    agent.policy.load_state_dict(torch.load('./'+env_name+'_model_best_old.pth'))
 
 writerImage = imageio.get_writer('./images/run.gif', mode='I', fps=25)
 
@@ -62,6 +62,7 @@ for n_episode in range(1, n_episodes+1):
     # print("States shape: ", states.shape)
     # state = torch.FloatTensor(state.reshape(1, -1))
     episode_length = 0
+    episodic_rewards = []
     for t in range(max_steps):
         time_step += 1
 
@@ -93,7 +94,7 @@ for n_episode in range(1, n_episodes+1):
 
         memory.rewards.append(rewards)
         memory.dones.append(dones)
-        # rewards_set.append(rewards)
+        episodic_rewards.append(rewards)
         state_value = 0
         
         # if render:
@@ -113,7 +114,7 @@ for n_episode in range(1, n_episodes+1):
             break
     
     episode_lengths.append(episode_length)
-    total_reward = np.sum(memory.rewards[-episode_length:])
+    total_reward = np.sum(episodic_rewards)/n_agents
     scores.append(total_reward)
     
     if train:

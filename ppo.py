@@ -23,7 +23,7 @@ class MemoryBuffer:
         del self.dones[:]
         del self.state_values[:]
     
-    def get_ordered_trajectories(self):
+    def get_ordered_trajectories(self, n_agents=None):
         ordered_actions = torch.FloatTensor()
         ordered_states = torch.FloatTensor()
         ordered_logprobs = torch.FloatTensor()
@@ -36,6 +36,8 @@ class MemoryBuffer:
 
         self.ordered_actions = torch.FloatTensor()
         for index in range(actions.shape[1]):
+            if n_agents !=None and n_agents == index+1:
+                break
             ordered_states = torch.cat((ordered_states, states[:, index]), 0)
             ordered_actions = torch.cat((ordered_actions, actions[:, index]), 0)
             ordered_logprobs = torch.cat((ordered_logprobs, logprobs[:, index]), 0)
@@ -49,14 +51,16 @@ class ActorCritic(nn.Module):
         super().__init__()
 
         self.actor_fc1 = nn.Linear(state_size, 2*hidden_size)
-        self.actor_fc2 = nn.Linear(2*hidden_size, hidden_size)
+        self.actor_fc2 = nn.Linear(2*hidden_size, 2*hidden_size)
+        self.actor_fc3 = nn.Linear(2*hidden_size, hidden_size)
 
         self.actor_mu = nn.Linear(hidden_size, action_size)
         self.actor_sigma = nn.Linear(hidden_size, action_size)
         
         
         self.critic_fc1 = nn.Linear(state_size, 2*hidden_size)
-        self.critic_fc2 = nn.Linear(2*hidden_size, hidden_size)
+        self.critic_fc2 = nn.Linear(2*hidden_size, 2*hidden_size)
+        self.critic_fc3 = nn.Linear(2*hidden_size, hidden_size)
 
         self.critic_value = nn.Linear(hidden_size, 1)
 
@@ -72,11 +76,13 @@ class ActorCritic(nn.Module):
     def forward(self, state):
         x = torch.tanh(self.actor_fc1(state))
         x = torch.tanh(self.actor_fc2(x))
+        x = torch.tanh(self.actor_fc3(x))
         mu = torch.tanh(self.actor_mu(x))
         sigma = F.softplus(self.actor_sigma(x))
 
         v = torch.tanh(self.critic_fc1(state))
         v = torch.tanh(self.critic_fc2(v))
+        v = torch.tanh(self.critic_fc3(v))
         state_value = self.critic_value(v)
 
         return mu, sigma, state_value 
@@ -117,7 +123,7 @@ class ActorCritic(nn.Module):
 
 class PPO():
     '''Proximal Policy Optimization algorithm.'''
-    def __init__(self, state_size, action_size, lr=1e-4, gamma=0.99, epsilon_clip=0.2, epochs=80, action_std=0.5):
+    def __init__(self, state_size, action_size, lr=1e-4, gamma=0.99, epsilon_clip=0.2, epochs=20, action_std=0.5):
 
         self.state_size = state_size
         self.action_size = action_size
@@ -126,8 +132,8 @@ class PPO():
         self.epsilon_clip = epsilon_clip
         self.K_epochs = epochs
 
-        self.policy = ActorCritic(self.state_size, self.action_size, action_std)
-        self.policy_old = ActorCritic(self.state_size, self.action_size, action_std)
+        self.policy = ActorCritic(self.state_size, self.action_size, action_std, hidden_size=128)
+        self.policy_old = ActorCritic(self.state_size, self.action_size, action_std, hidden_size=128)
 
         self.MseLoss = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.lr, betas=(0.9, 0.999))
@@ -143,7 +149,7 @@ class PPO():
 
     def update(self, memory):
         '''Update agent's network using collected set of experiences.'''
-        states, actions, log_probs, rewards, dones = memory.get_ordered_trajectories()
+        states, actions, log_probs, rewards, dones = memory.get_ordered_trajectories(5)
 
         discounted_rewards = []
         discounted_reward = 0
