@@ -1,4 +1,4 @@
-torch==1.4.0
-gym==0.17.1
-numpy==1.18.1
 imageio==2.8.0
+numpy==1.18.1
+unityagents==0.4.0
+torch==1.4.0
