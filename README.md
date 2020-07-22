@@ -20,6 +20,10 @@ The implementation uses Pytorch for training and Unity Environments for environm
 
 ## Example result for `Reacher` environment
 
+ | ![](images/reacher_trained.gif) |
+ | :---: |
+| Agents trained after 4000 episodes | 
+
 ### Environment details
 The state size consists of 33 real-valued numbers corresponding to position, rotation, velocity and angular velocity of each joint. The agent is controlled with 4 continuous actions corresponding to torque applied to two joints. The agent's goal is to maintain the end of the arm within the moving goal location. The agent is rewarded +0.1 for each step when the arm is within the spherical area marked with green. The environment ends after 1000 steps.
 
@@ -27,26 +31,19 @@ The state size consists of 33 real-valued numbers corresponding to position, rot
 ### Architecture modifications
 The architecture size needs to be modified in order to achieve good results.
 
-Policy network:
-3 fully connected layers with 256 neurons each
-Actor network:
-3 fully connected layers with 256 neurons each
+- Policy network:
+ 3 fully connected layers with 256 neurons each
+- Actor network:
+ 3 fully connected layers with 256 neurons each
 
 `tanh` activation is used for both networks
 
 
 ### Training progress
 
- `Reacher environment`
-Training progress of 20 agents in `Reacher` environment.
-
- | ![](images/reacher_trained.gif) |
- | :---: |
-| Agents trained after 4000 episodes | 
-
  | ![](images/reacher_chart.png) |
  | :---: |
-| Training chart with score averaged over 10 consecutive episodes (marked with red) | 
+| Training progress of 20 agents in `Reacher` environment. Score averaged over 10 consecutive episodes (marked with red) | 
 
 
 ## Precompiled environments
