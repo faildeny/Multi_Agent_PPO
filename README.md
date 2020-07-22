@@ -40,11 +40,11 @@ Actor network:
  `Reacher environment`
 Training progress of 20 agents in `Reacher` environment.
 
-![](images/walker_500.gif) | ![](images/walker_2000.gif) | ![](images/walker_5000.gif)
-:---: | :---: | :---:
-500 episodes | 2000 episodes | 5000 episodes
+ | ![](images/reacher_trained.gif) |
+ | :---: |
+| Agents trained after 4000 episodes | 
 
- | ![](images/walker_chart2.png) |
+ | ![](images/reacher_chart.png) |
  | :---: |
 | Training chart with score averaged over 10 consecutive episodes (marked with red) | 
 
